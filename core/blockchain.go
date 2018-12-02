@@ -138,6 +138,12 @@ type BlockChain struct {
 	shouldPreserve func(*types.Block) bool // Function used to determine whether should preserve the given block.
 }
 
+/*------------------------------------------------------------------------*/
+/*----------------------                           -----------------------*/
+/*----------------------        BlockChian入口函数 -----------------------*/
+/*----------------------                           -----------------------*/
+/*------------------------------------------------------------------------*/
+
 // NewBlockChain returns a fully initialised block chain using information
 // available in the database. It initialises the default Ethereum Validator and
 // Processor.
@@ -177,14 +183,19 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 	bc.SetProcessor(NewStateProcessor(chainConfig, bc, engine))
 
 	var err error
+	// 创建headChain
 	bc.hc, err = NewHeaderChain(db, chainConfig, engine, bc.getProcInterrupt)
 	if err != nil {
 		return nil, err
 	}
+	// 获取当前创世区块
 	bc.genesisBlock = bc.GetBlockByNumber(0)
 	if bc.genesisBlock == nil {
 		return nil, ErrNoGenesis
 	}
+
+	// 加载最后一个区块
+	// 从数据库读取最后一个区块的状态
 	if err := bc.loadLastState(); err != nil {
 		return nil, err
 	}
@@ -213,6 +224,7 @@ func (bc *BlockChain) getProcInterrupt() bool {
 // loadLastState loads the last known chain state from the database. This method
 // assumes that the chain manager mutex is held.
 func (bc *BlockChain) loadLastState() error {
+	// 使用"LastBlock" key查询头区块
 	// Restore the last known head block
 	head := rawdb.ReadHeadBlockHash(bc.db)
 	if head == (common.Hash{}) {
@@ -603,6 +615,7 @@ func (bc *BlockChain) GetBlock(hash common.Hash, number uint64) *types.Block {
 	if block, ok := bc.blockCache.Get(hash); ok {
 		return block.(*types.Block)
 	}
+	//  使用'h' + num + hash 获取头区块出来
 	block := rawdb.ReadBlock(bc.db, hash, number)
 	if block == nil {
 		return nil
@@ -614,10 +627,12 @@ func (bc *BlockChain) GetBlock(hash common.Hash, number uint64) *types.Block {
 
 // GetBlockByHash retrieves a block from the database by hash, caching it if found.
 func (bc *BlockChain) GetBlockByHash(hash common.Hash) *types.Block {
+	// 先获取number出来
 	number := bc.hc.GetBlockNumber(hash)
 	if number == nil {
 		return nil
 	}
+	// 使用
 	return bc.GetBlock(hash, *number)
 }
 

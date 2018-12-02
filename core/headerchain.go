@@ -92,17 +92,19 @@ func NewHeaderChain(chainDb ethdb.Database, config *params.ChainConfig, engine c
 		engine:        engine,
 	}
 
-	hc.genesisHeader = hc.GetHeaderByNumber(0)
+	hc.genesisHeader = hc.GetHeaderByNumber(0) //获取创世块的头信息
 	if hc.genesisHeader == nil {
 		return nil, ErrNoGenesis
 	}
 
+	//存储当前 header信息到数据库中
 	hc.currentHeader.Store(hc.genesisHeader)
 	if head := rawdb.ReadHeadBlockHash(chainDb); head != (common.Hash{}) {
 		if chead := hc.GetHeaderByHash(head); chead != nil {
 			hc.currentHeader.Store(chead)
 		}
 	}
+	//设置当前header的hash值
 	hc.currentHeaderHash = hc.CurrentHeader().Hash()
 
 	return hc, nil
@@ -115,6 +117,7 @@ func (hc *HeaderChain) GetBlockNumber(hash common.Hash) *uint64 {
 		number := cached.(uint64)
 		return &number
 	}
+	//使用 "H" + hash 获取number 出来
 	number := rawdb.ReadHeaderNumber(hc.chainDb, hash)
 	if number != nil {
 		hc.numberCache.Add(hash, *number)
