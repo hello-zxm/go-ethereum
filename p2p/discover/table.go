@@ -110,6 +110,7 @@ func newTable(t transport, db *enode.DB, bootnodes []*enode.Node) (*Table, error
 		rand:       mrand.New(mrand.NewSource(0)),
 		ips:        netutil.DistinctNetSet{Subnet: tableSubnet, Limit: tableIPLimit},
 	}
+	//初始化节点
 	if err := tab.setFallbackNodes(bootnodes); err != nil {
 		return nil, err
 	}
@@ -244,21 +245,22 @@ func (tab *Table) LookupRandom() []*enode.Node {
 	return unwrapNodes(tab.lookup(target, true))
 }
 
+// [gaoqilin]
 // lookup performs a network search for nodes close to the given target. It approaches the
 // target by querying nodes that are closer to it on each iteration. The given target does
 // not need to be an actual node identifier.
 func (tab *Table) lookup(targetKey encPubkey, refreshIfEmpty bool) []*node {
 	var (
-		target         = enode.ID(crypto.Keccak256Hash(targetKey[:]))
-		asked          = make(map[enode.ID]bool)
-		seen           = make(map[enode.ID]bool)
-		reply          = make(chan []*node, alpha)
+		target         = enode.ID(crypto.Keccak256Hash(targetKey[:])) //询问节点
+		asked          = make(map[enode.ID]bool)                      //询问过的节点
+		seen           = make(map[enode.ID]bool)                      //是否见到过
+		reply          = make(chan []*node, alpha)                    //返回
 		pendingQueries = 0
 		result         *nodesByDistance
 	)
 	// don't query further if we hit ourself.
 	// unlikely to happen often in practice.
-	asked[tab.self().ID()] = true
+	asked[tab.self().ID()] = true //防止收到自己, 再去询问自己, 导致成死循环
 
 	for {
 		tab.mutex.Lock()
@@ -272,7 +274,7 @@ func (tab *Table) lookup(targetKey encPubkey, refreshIfEmpty bool) []*node {
 		// We actually wait for the refresh to complete here. The very
 		// first query will hit this case and run the bootstrapping
 		// logic.
-		<-tab.refresh()
+		<-tab.refresh() //多刷新一次
 		refreshIfEmpty = false
 	}
 
@@ -286,18 +288,18 @@ func (tab *Table) lookup(targetKey encPubkey, refreshIfEmpty bool) []*node {
 				go tab.findnode(n, targetKey, reply)
 			}
 		}
-		if pendingQueries == 0 {
+		if pendingQueries == 0 { //直到询问过所有的节点, 才退出
 			// we have asked all closest nodes, stop the search
 			break
 		}
 		// wait for the next reply
 		for _, n := range <-reply {
-			if n != nil && !seen[n.ID()] {
+			if n != nil && !seen[n.ID()] { // 没有见过的
 				seen[n.ID()] = true
-				result.push(n, bucketSize)
+				result.push(n, bucketSize) //push中包含剔除功能, 也包含不会超过16个的限制
 			}
 		}
-		pendingQueries--
+		pendingQueries-- //-- 后, 又可以启动一个协程了
 	}
 	return result.entries
 }
@@ -320,7 +322,7 @@ func (tab *Table) findnode(n *node, targetKey encPubkey, reply chan<- []*node) {
 	// Grab as many nodes as possible. Some of them might not be alive anymore, but we'll
 	// just remove those again during revalidation.
 	for _, n := range r {
-		tab.add(n)
+		tab.add(n) //放到key桶中
 	}
 	reply <- r
 }
