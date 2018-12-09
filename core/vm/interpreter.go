@@ -29,11 +29,13 @@ import (
 // Config are the configuration options for the Interpreter
 type Config struct {
 	// Debug enabled debugging Interpreter options
+	// 是否开启debug模式
 	Debug bool
 	// Tracer is the op code logger
 	Tracer Tracer
 	// NoRecursion disabled Interpreter call, callcode,
 	// delegate call and create.
+	// 是否递归, 深度执行 , 命令行中可以配置此参数
 	NoRecursion bool
 	// Enable recording of SHA3/keccak preimages
 	EnablePreimageRecording bool

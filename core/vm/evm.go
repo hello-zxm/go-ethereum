@@ -69,6 +69,7 @@ func run(evm *EVM, contract *Contract, input []byte, readOnly bool) ([]byte, err
 
 // Context provides the EVM with auxiliary information. Once provided
 // it shouldn't be modified.
+// 执行的上下文
 type Context struct {
 	// CanTransfer returns whether the account contains
 	// sufficient ether to transfer the value
@@ -79,15 +80,19 @@ type Context struct {
 	GetHash GetHashFunc
 
 	// Message information
+	// 最原始的地址, 也就是外部账户的地址
 	Origin   common.Address // Provides information for ORIGIN
 	GasPrice *big.Int       // Provides information for GASPRICE
 
 	// Block information
-	Coinbase    common.Address // Provides information for COINBASE
-	GasLimit    uint64         // Provides information for GASLIMIT
-	BlockNumber *big.Int       // Provides information for NUMBER
-	Time        *big.Int       // Provides information for TIME
-	Difficulty  *big.Int       // Provides information for DIFFICULTY
+	// 矿工的地址
+	Coinbase common.Address // Provides information for COINBASE
+	GasLimit uint64         // Provides information for GASLIMIT
+	//
+	BlockNumber *big.Int // Provides information for NUMBER
+	Time        *big.Int // Provides information for TIME
+	//  难度值
+	Difficulty *big.Int // Provides information for DIFFICULTY
 }
 
 // EVM is the Ethereum Virtual Machine base object and provides
@@ -105,6 +110,7 @@ type EVM struct {
 	// StateDB gives access to the underlying state
 	StateDB StateDB
 	// Depth is the current call stack
+	// 调用深度
 	depth int
 
 	// chainConfig contains information about the current chain
@@ -113,17 +119,20 @@ type EVM struct {
 	chainRules params.Rules
 	// virtual machine configuration options used to initialise the
 	// evm.
+	// 配置文件
 	vmConfig Config
 	// global (to this context) ethereum virtual machine
 	// used throughout the execution of the tx.
 	interpreters []Interpreter
-	interpreter  Interpreter
+	// 解释器, 用执行合约的代码
+	interpreter Interpreter
 	// abort is used to abort the EVM calling operations
 	// NOTE: must be set atomically
 	abort int32
 	// callGasTemp holds the gas available for the current call. This is needed because the
 	// available gas is calculated in gasCall* according to the 63/64 rule and later
 	// applied in opCall*.
+	// gas临时存储
 	callGasTemp uint64
 }
 
@@ -448,9 +457,10 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 }
 
+// 创建EVM 环境
 // Create creates a new contract using code as deployment code.
 func (evm *EVM) Create(caller ContractRef, code []byte, gas uint64, value *big.Int) (ret []byte, contractAddr common.Address, leftOverGas uint64, err error) {
-	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetNonce(caller.Address()))
+	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetNonce(caller.Address())) //合约地址
 	return evm.create(caller, &codeAndHash{code: code}, gas, value, contractAddr)
 }
 

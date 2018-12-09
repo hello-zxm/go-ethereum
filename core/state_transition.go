@@ -49,15 +49,15 @@ The state transitioning model does all the necessary work to work out a valid ne
 6) Derive new state root
 */
 type StateTransition struct {
-	gp         *GasPool
-	msg        Message
-	gas        uint64
-	gasPrice   *big.Int
-	initialGas uint64
-	value      *big.Int
-	data       []byte
-	state      vm.StateDB
-	evm        *vm.EVM
+	gp         *GasPool   // 区块工作环境中的gas剩余额度
+	msg        Message    // 交易转化成的message
+	gas        uint64     //交易的gas余额 , 初始化的时候, 会和initialGas一样, 执行的时候会一直减减
+	gasPrice   *big.Int   //
+	initialGas uint64     //初始值gas , 可以用来计算给矿工的钱: initialGas-gas 结果就是给矿工的钱
+	value      *big.Int   //交易转账的额度
+	data       []byte     //交易的input
+	state      vm.StateDB //状态数
+	evm        *vm.EVM    //evm 对象
 }
 
 // Message represents a message sent to a contract.
@@ -78,32 +78,32 @@ type Message interface {
 // IntrinsicGas computes the 'intrinsic gas' for a message with the given data.
 func IntrinsicGas(data []byte, contractCreation, homestead bool) (uint64, error) {
 	// Set the starting gas for the raw transaction
-	var gas uint64
+	var gas uint64 //需要花费的gas
 	if contractCreation && homestead {
-		gas = params.TxGasContractCreation
+		gas = params.TxGasContractCreation //合约创建花费最低gas: 53000 wei
 	} else {
-		gas = params.TxGas
+		gas = params.TxGas // 单独转换花费最低gas: 21000 wei
 	}
 	// Bump the required gas by the amount of transactional data
 	if len(data) > 0 {
 		// Zero and non-zero bytes are priced differently
 		var nz uint64
 		for _, byt := range data {
-			if byt != 0 {
+			if byt != 0 { //判断非0字节的个数
 				nz++
 			}
 		}
 		// Make sure we don't exceed uint64 for all data combinations
-		if (math.MaxUint64-gas)/params.TxDataNonZeroGas < nz {
+		if (math.MaxUint64-gas)/params.TxDataNonZeroGas < nz { //每个非0字节68gas消耗 , 这里验证是否不够花了
 			return 0, vm.ErrOutOfGas
 		}
-		gas += nz * params.TxDataNonZeroGas
+		gas += nz * params.TxDataNonZeroGas //每个非0字节68gas消耗
 
-		z := uint64(len(data)) - nz
-		if (math.MaxUint64-gas)/params.TxDataZeroGas < z {
+		z := uint64(len(data)) - nz                        //获取0字节的个数
+		if (math.MaxUint64-gas)/params.TxDataZeroGas < z { // 验证是否0字是否不够花了
 			return 0, vm.ErrOutOfGas
 		}
-		gas += z * params.TxDataZeroGas
+		gas += z * params.TxDataZeroGas //同时计算0字节的gas
 	}
 	return gas, nil
 }
@@ -128,6 +128,7 @@ func NewStateTransition(evm *vm.EVM, msg Message, gp *GasPool) *StateTransition 
 // the gas used (which includes gas refunds) and an error if it failed. An error always
 // indicates a core error meaning that the message would always fail for that particular
 // state and would never be accepted within a block.
+// task1: 预检查nonce和gas值,初始化交易工作环境
 func ApplyMessage(evm *vm.EVM, msg Message, gp *GasPool) ([]byte, uint64, bool, error) {
 	return NewStateTransition(evm, msg, gp).TransitionDb()
 }
@@ -150,16 +151,16 @@ func (st *StateTransition) useGas(amount uint64) error {
 }
 
 func (st *StateTransition) buyGas() error {
-	mgval := new(big.Int).Mul(new(big.Int).SetUint64(st.msg.Gas()), st.gasPrice)
-	if st.state.GetBalance(st.msg.From()).Cmp(mgval) < 0 {
+	mgval := new(big.Int).Mul(new(big.Int).SetUint64(st.msg.Gas()), st.gasPrice) // 相乘 gas * gasPrice
+	if st.state.GetBalance(st.msg.From()).Cmp(mgval) < 0 {                       //如果账户余额不够 , 进入到此区间
 		return errInsufficientBalanceForGas
 	}
-	if err := st.gp.SubGas(st.msg.Gas()); err != nil {
+	if err := st.gp.SubGas(st.msg.Gas()); err != nil { //消耗  st.msg.Gas()
 		return err
 	}
-	st.gas += st.msg.Gas()
+	st.gas += st.msg.Gas() //再加回来
 
-	st.initialGas = st.msg.Gas()
+	st.initialGas = st.msg.Gas() //初始化 initialGas
 	st.state.SubBalance(st.msg.From(), mgval)
 	return nil
 }
@@ -169,7 +170,7 @@ func (st *StateTransition) preCheck() error {
 	if st.msg.CheckNonce() {
 		nonce := st.state.GetNonce(st.msg.From())
 		if nonce < st.msg.Nonce() {
-			return ErrNonceTooHigh
+			return ErrNonceTooHigh //检测nonce是否太高
 		} else if nonce > st.msg.Nonce() {
 			return ErrNonceTooLow
 		}
@@ -180,21 +181,31 @@ func (st *StateTransition) preCheck() error {
 // TransitionDb will transition the state by applying the current message and
 // returning the result including the used gas. It returns an error if failed.
 // An error indicates a consensus issue.
+
+// task1: 预先检查nonce和gas值,初始化交易工作环境的gas初始值
+// task2: 计算并扣除固定gas消耗
+// task3: 调用evm创建或执行交易
+// task4: 奖励旷工
 func (st *StateTransition) TransitionDb() (ret []byte, usedGas uint64, failed bool, err error) {
+	// 1.检测nonce
+	// 2.初始化gas值
 	if err = st.preCheck(); err != nil {
 		return
 	}
 	msg := st.msg
-	sender := vm.AccountRef(msg.From())
+	sender := vm.AccountRef(msg.From()) //,因为AccountRef 实现了Address()方法, 强制转换为AccountRef类型, 方便后面调用Addreess()方法
 	homestead := st.evm.ChainConfig().IsHomestead(st.evm.BlockNumber)
-	contractCreation := msg.To() == nil
+	contractCreation := msg.To() == nil //是否是合约创建
 
+	// 门票花费 , 固定的gas花费 21000 + 53000 + data中字节
+	// 非0字节68 gas
+	// 0字节4 gas
 	// Pay intrinsic gas
 	gas, err := IntrinsicGas(st.data, contractCreation, homestead)
 	if err != nil {
 		return nil, 0, false, err
 	}
-	if err = st.useGas(gas); err != nil {
+	if err = st.useGas(gas); err != nil { //消耗掉gas , 并验证是否报错
 		return nil, 0, false, err
 	}
 
@@ -217,6 +228,7 @@ func (st *StateTransition) TransitionDb() (ret []byte, usedGas uint64, failed bo
 		// The only possible consensus-error would be if there wasn't
 		// sufficient balance to make the transfer happen. The first
 		// balance transfer may never fail.
+		// 注意: 这里只有账户余额不足的情况下才皆大欢喜 , 所有的gas都会退还
 		if vmerr == vm.ErrInsufficientBalance {
 			return nil, 0, false, vmerr
 		}

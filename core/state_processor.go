@@ -85,6 +85,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 // and uses the input parameters for its environment. It returns the receipt
 // for the transaction, gas used and an error if the transaction failed,
 // indicating the block was invalid.
+// task1: 将交易转换成message
+// task2: 初始化一个EVM执行环境
+// task3: 执行交易，改变stateDB世界状态,然后生成收据
 func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, uint64, error) {
 	msg, err := tx.AsMessage(types.MakeSigner(config, header.Number))
 	if err != nil {
@@ -94,8 +97,10 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	context := NewEVMContext(msg, header, bc, author)
 	// Create a new environment which holds all relevant information
 	// about the transaction and calling mechanisms.
+	// 初始化evm执行环境
 	vmenv := vm.NewEVM(context, statedb, config, cfg)
 	// Apply the transaction to the current state (included in the env)
+	//ApplyMessage底层调用 TransitionDb()
 	_, gas, failed, err := ApplyMessage(vmenv, msg, gp)
 	if err != nil {
 		return nil, 0, err
@@ -105,21 +110,26 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	if config.IsByzantium(header.Number) {
 		statedb.Finalise(true)
 	} else {
+		//处理硬分叉的节点
 		root = statedb.IntermediateRoot(config.IsEIP158(header.Number)).Bytes()
 	}
-	*usedGas += gas
+	*usedGas += gas //改变外部传入过来的指针, 继续加上 , 实际花费的gas
 
 	// Create a new receipt for the transaction, storing the intermediate root and gas used by the tx
 	// based on the eip phase, we're passing whether the root touch-delete accounts.
+	// 创建交易的收据
 	receipt := types.NewReceipt(root, failed, *usedGas)
 	receipt.TxHash = tx.Hash()
-	receipt.GasUsed = gas
+	receipt.GasUsed = gas // 记录花费的
 	// if the transaction created a contract, store the creation address in the receipt.
+	//  如果msg.To() == nil 说明为创建合约
 	if msg.To() == nil {
-		receipt.ContractAddress = crypto.CreateAddress(vmenv.Context.Origin, tx.Nonce())
+		receipt.ContractAddress = crypto.CreateAddress(vmenv.Context.Origin, tx.Nonce()) //创建合约地址
 	}
 	// Set the receipt logs and create a bloom for filtering
+	// 获取
 	receipt.Logs = statedb.GetLogs(tx.Hash())
+	// 创建bloom过滤器
 	receipt.Bloom = types.CreateBloom(types.Receipts{receipt})
 
 	return receipt, gas, err
