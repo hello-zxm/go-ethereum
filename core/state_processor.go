@@ -94,14 +94,16 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 		return nil, 0, err
 	}
 	// Create a new context to be used in the EVM environment
+	// 创建上下文环境, 初始化一些默认值
+	// 初始化验证是否可转账的函数等
 	context := NewEVMContext(msg, header, bc, author)
 	// Create a new environment which holds all relevant information
 	// about the transaction and calling mechanisms.
 	// 初始化evm执行环境
 	vmenv := vm.NewEVM(context, statedb, config, cfg)
 	// Apply the transaction to the current state (included in the env)
-	//ApplyMessage底层调用 TransitionDb()
-	_, gas, failed, err := ApplyMessage(vmenv, msg, gp)
+	// ApplyMessage底层调用 TransitionDb() 执行交易
+	_, gas, failed, err := ApplyMessage(vmenv, msg, gp) // 执行交易
 	if err != nil {
 		return nil, 0, err
 	}

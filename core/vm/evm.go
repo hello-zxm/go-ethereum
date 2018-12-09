@@ -51,6 +51,7 @@ func run(evm *EVM, contract *Contract, input []byte, readOnly bool) ([]byte, err
 			return RunPrecompiledContract(p, input, contract)
 		}
 	}
+	// 解释器执行循环
 	for _, interpreter := range evm.interpreters {
 		if interpreter.CanRun(contract.Code) {
 			if evm.interpreter != interpreter {
@@ -380,12 +381,25 @@ func (c *codeAndHash) Hash() common.Hash {
 }
 
 // create creates a new contract using code as deployment code.
+// [gaoqilin]
+// task1: 交易执行前的检查:1.递归深度判断
+// task2: 余额是否足够
+// task3: 确保当前要创建的地址在世界状态中没有合约存在, 如果存在，直接返回
+// task4: 创建一个合约新账户,设置新账户的nonce为1
+// task5: 进行转账
+// task6: 创建一个待执行的合约对象,并执行
+// task7: 处理返回值
+// 调用时机:
+//		opCreate指令  Interpreter.Run
+//		Work执行交易的过程中 ApplyTransaction()
+
 func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64, value *big.Int, address common.Address) ([]byte, common.Address, uint64, error) {
 	// Depth check execution. Fail if we're trying to execute above the
 	// limit.
-	if evm.depth > int(params.CallCreateDepth) {
+	if evm.depth > int(params.CallCreateDepth) { //调用深度判断
 		return nil, common.Address{}, gas, ErrDepth
 	}
+	// 验证是否可以转账, 即验证余额是否足够
 	if !evm.CanTransfer(evm.StateDB, caller.Address(), value) {
 		return nil, common.Address{}, gas, ErrInsufficientBalance
 	}
@@ -393,24 +407,32 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	evm.StateDB.SetNonce(caller.Address(), nonce+1)
 
 	// Ensure there's no existing contract already at the designated address
+	// 确保当前要创建的地址在世界状态中没有合约存在, 如果存在，直接返回
 	contractHash := evm.StateDB.GetCodeHash(address)
 	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != emptyCodeHash) {
 		return nil, common.Address{}, 0, ErrContractAddressCollision
 	}
 	// Create a new account on the state
+	// 创建一个快照, 这里的快照是可以直接全部回滚 , 但是如果执行失败有可能花费的gas不退还
 	snapshot := evm.StateDB.Snapshot()
+	// 创建一个新合约账户
 	evm.StateDB.CreateAccount(address)
+	// 当前的区块高度, 在硬分叉之后, 都会设置nonce为1
 	if evm.ChainConfig().IsEIP158(evm.BlockNumber) {
 		evm.StateDB.SetNonce(address, 1)
 	}
+	// 进行转账
 	evm.Transfer(evm.StateDB, caller.Address(), address, value)
 
 	// initialise a new contract and set the code that is to be used by the
 	// EVM. The contract is a scoped environment for this execution context
 	// only.
+	// 创建合约
 	contract := NewContract(caller, AccountRef(address), value, gas)
+	// 初始化变量
 	contract.SetCodeOptionalHash(&address, codeAndHash)
 
+	// 处理递归参数
 	if evm.vmConfig.NoRecursion && evm.depth > 0 {
 		return nil, address, gas, nil
 	}
@@ -420,6 +442,8 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	}
 	start := time.Now()
 
+	// 开始执行合约
+	//注意: 递归调用实际是走opCall 继续调用的, 直接看run代码是看不到递归的
 	ret, err := run(evm, contract, nil, false)
 
 	// check whether the max code size has been exceeded
@@ -460,7 +484,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 // 创建EVM 环境
 // Create creates a new contract using code as deployment code.
 func (evm *EVM) Create(caller ContractRef, code []byte, gas uint64, value *big.Int) (ret []byte, contractAddr common.Address, leftOverGas uint64, err error) {
-	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetNonce(caller.Address())) //合约地址
+	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetNonce(caller.Address())) //创建合约地址
 	return evm.create(caller, &codeAndHash{code: code}, gas, value, contractAddr)
 }
 

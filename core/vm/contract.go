@@ -45,19 +45,28 @@ type Contract struct {
 	// CallerAddress is the result of the caller which initialised this
 	// contract. However when the "call method" is delegated this value
 	// needs to be initialised to that of the caller's caller.
+	//调用者地址
 	CallerAddress common.Address
-	caller        ContractRef
-	self          ContractRef
+	// 调用者
+	caller ContractRef
+	// 被调用合约
+	self ContractRef
 
 	jumpdests map[common.Hash]bitvec // Aggregated result of JUMPDEST analysis.
 	analysis  bitvec                 // Locally cached result of JUMPDEST analysis
 
-	Code     []byte
+	// 具体的合约代码 (注意: 已经去除掉编译器的开头部分)
+	Code []byte
+	// 合约hash值
 	CodeHash common.Hash
+	// 合约地址
 	CodeAddr *common.Address
-	Input    []byte
+	// 传入的参数, 输入的msg等
+	Input []byte
 
-	Gas   uint64
+	// 交易余额
+	Gas uint64
+	// 转账额度
 	value *big.Int
 }
 
